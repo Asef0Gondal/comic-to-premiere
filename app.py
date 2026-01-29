@@ -14,7 +14,7 @@ import traceback
 from typing import List, Optional, Tuple
 
 # Import our modules
-from modules.image_processor import process_image_to_bytes, validate_image
+from modules.image_processor import process_image_to_bytes, validate_image, split_panels_from_image
 from modules.gemini_client import analyze_audio_timing, generate_fallback_timings, validate_api_key
 from modules.xml_generator import create_premiere_xml
 
