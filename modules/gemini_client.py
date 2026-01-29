@@ -125,3 +125,28 @@ def generate_fallback_timings(panel_count: int, total_duration: float) -> list:
             "end": round((i + 1) * duration_per_panel, 2)
         })
     return timings
+
+def analyze_audio_with_gemini(audio_bytes, audio_filename, panel_count, api_key):
+    """
+    Wrapper function for compatibility with app.py.
+    Analyzes audio and returns timing data for comic panels.
+    
+    Args:
+        audio_bytes: Raw audio file bytes
+        audio_filename: Original filename
+        panel_count: Number of panels
+        api_key: Google Gemini API key
+    
+    Returns:
+        List of timing dictionaries or None if analysis fails
+    """
+    # Create a simple generic script for panel analysis
+    script = f"Comic panels 1-{panel_count} with dialogue"
+    
+    return analyze_audio_timing(
+        api_key=api_key,
+        audio_data=audio_bytes,
+        audio_filename=audio_filename,
+        script=script,
+        panel_count=panel_count
+    )
