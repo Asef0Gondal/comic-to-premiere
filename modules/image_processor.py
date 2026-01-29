@@ -78,3 +78,28 @@ def process_image_to_bytes(image_data: bytes, format: str = "JPEG") -> bytes:
     processed.save(output, format=format, quality=95)
     output.seek(0)
     return output.getvalue()
+
+def process_images(image_files):
+    """
+    Process a list of uploaded image files.
+    
+    Args:
+        image_files: List of Streamlit UploadedFile objects
+    
+    Returns:
+        List of processed image bytes (PNG format)
+    """
+    processed_images = []
+    
+    for image_file in image_files:
+        # Read the image data
+        image_data = image_file.read()
+        
+        # Process and convert to PNG
+        processed = process_image_to_bytes(image_data, format="PNG")
+        processed_images.append(processed)
+        
+        # Reset file pointer for potential re-reading
+        image_file.seek(0)
+    
+    return processed_images
