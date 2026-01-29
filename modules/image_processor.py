@@ -1,39 +1,29 @@
-"""Image Processing Module
-Handles resizing images to 1920x1080 with blurred background fill.
-Includes AI-powered text/speech bubble removal and validation.
+"""Image Processing Module with OpenCV Panel Detection
+Automatically detects and crops individual comic scenes from vertical panels.
+Uses OpenCV contour detection for fast, reliable panel splitting.
 """
 from PIL import Image, ImageFilter, ImageEnhance
 import io
-import re
-import json
-from typing import Tuple, Optional
+import cv2
+import numpy as np
+from typing import List, Tuple, Optional
+
 
 def validate_image(image_data) -> Tuple[bool, Optional[str]]:
     """
     Validate that uploaded file is a valid image.
-    
-    Args:
-        image_data: File-like object or bytes
-    
-    Returns:
-        Tuple of (is_valid, error_message)
     """
     try:
-        # Read data if it's a file-like object
         if hasattr(image_data, 'read'):
             data = image_data.read()
-            image_data.seek(0)  # Reset
+            image_data.seek(0)
         else:
             data = image_data
         
-        # Try to open as image
         img = Image.open(io.BytesIO(data))
-        img.verify()  # Verify it's a valid image
-        
-        # Re-open after verify (verify closes the file)
+        img.verify()
         img = Image.open(io.BytesIO(data))
         
-        # Check dimensions
         width, height = img.size
         if width < 100 or height < 100:
             return False, "Image is too small (minimum 100x100 pixels)"
@@ -42,267 +32,184 @@ def validate_image(image_data) -> Tuple[bool, Optional[str]]:
             return False, "Image is too large (maximum 10000x10000 pixels)"
         
         return True, None
-        
+    
     except Exception as e:
         return False, f"Invalid image file: {str(e)}"
 
-def detect_text_free_region(image_data: bytes, api_key: str, timeout: int = 30) -> Optional[Tuple[float, float, float, float]]:
+
+def detect_panels(img_array: np.ndarray, min_area: int = 3000) -> List[Tuple[int, int, int, int]]:
     """
-    Use Gemini Vision to detect the main artwork area without text/speech bubbles.
+    Detect individual panel boundaries using OpenCV contour detection.
+    
+    Args:
+        img_array: OpenCV image array (BGR)
+        min_area: Minimum panel area in pixels
+    
+    Returns:
+        List of (x, y, w, h) tuples for each detected panel, sorted top-to-bottom
+    """
+    orig_h, orig_w = img_array.shape[:2]
+    proc = img_array.copy()
+    
+    # Downscale large images for faster processing
+    max_dim = 1200
+    scale = 1.0
+    if max(orig_w, orig_h) > max_dim:
+        scale = max_dim / float(max(orig_w, orig_h))
+        proc = cv2.resize(proc, (int(orig_w*scale), int(orig_h*scale)), interpolation=cv2.INTER_AREA)
+    
+    # Convert to grayscale and blur
+    gray = cv2.cvtColor(proc, cv2.COLOR_BGR2GRAY)
+    blur = cv2.GaussianBlur(gray, (5,5), 0)
+    
+    # Adaptive threshold to detect panel borders
+    th = cv2.adaptiveThreshold(blur, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, 
+                                cv2.THRESH_BINARY_INV, 15, 9)
+    
+    # Morphological closing to connect panel borders
+    kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (7,7))
+    closed = cv2.morphologyEx(th, cv2.MORPH_CLOSE, kernel, iterations=2)
+    
+    # Find contours
+    contours, _ = cv2.findContours(closed, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    
+    panels = []
+    for c in contours:
+        x, y, w, h = cv2.boundingRect(c)
+        area = w * h
+        
+        # Scale area back to original image size
+        area_orig = area / (scale * scale)
+        
+        # Filter by area and size
+        if area_orig >= min_area and w > 30 and h > 30:
+            # Convert back to original coordinates
+            x_o = int(x/scale)
+            y_o = int(y/scale) 
+            w_o = int(w/scale)
+            h_o = int(h/scale)
+            panels.append((x_o, y_o, w_o, h_o))
+    
+    # Sort top-to-bottom, left-to-right
+    panels_sorted = sorted(panels, key=lambda r: (r[1], r[0]))
+    
+    return panels_sorted
+
+
+def split_panels_from_image(image_data: bytes, min_area: int = 3000) -> List[Tuple[bytes, int]]:
+    """
+    Automatically split a comic panel into individual scenes using OpenCV.
     
     Args:
         image_data: Raw image bytes
-        api_key: Google Gemini API key
-        timeout: API timeout in seconds
+        min_area: Minimum panel area in pixels (default 3000, lower for small panels)
     
     Returns:
-        Tuple of (left, top, right, bottom) as percentages (0-100), or None if detection fails
+        List of (cropped_image_bytes, scene_number) tuples
+        If detection fails, returns original image as single scene
     """
     try:
-        import google.generativeai as genai
-        genai.configure(api_key=api_key)
+        # Convert bytes to numpy array
+        nparr = np.frombuffer(image_data, np.uint8)
+        img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
         
-        # Upload image for analysis
-        img = Image.open(io.BytesIO(image_data))
-        if img.mode != 'RGB':
-            img = img.convert('RGB')
+        if img is None:
+            print("Failed to decode image")
+            return [(image_data, 1)]
         
-        # Save to temp buffer for upload
-        img_buffer = io.BytesIO()
-        img.save(img_buffer, format='JPEG', quality=85)
-        img_buffer.seek(0)
+        # Detect panels
+        panels = detect_panels(img, min_area=min_area)
         
-        # Upload with error handling
-        try:
-            uploaded_file = genai.upload_file(
-                data=img_buffer.getvalue(),
-                display_name="comic_panel.jpg",
-                mime_type="image/jpeg"
-            )
-        except Exception as e:
-            print(f"Failed to upload image: {e}")
-            return None
+        if not panels or len(panels) <= 1:
+            print(f"Panel detection found {len(panels) if panels else 0} panels, using full image")
+            return [(image_data, 1)]
         
-        prompt = """Analyze this comic panel image. I need to crop out ALL text, speech bubbles, dialogue boxes, captions, and any text overlays to keep ONLY the artwork/illustration.
-
-Look at the image and find the LARGEST rectangular area that contains the main artwork WITHOUT any text, speech bubbles, or dialogue.
-
-Return ONLY a JSON object with the crop coordinates as percentages (0-100) of the image dimensions:
-{"left": X, "top": Y, "right": X2, "bottom": Y2}
-
-Where:
-- left: percentage from left edge where the crop starts
-- top: percentage from top edge where the crop starts  
-- right: percentage from left edge where the crop ends
-- bottom: percentage from top edge where the crop ends
-
-If there's no text in the image, return {"left": 0, "top": 0, "right": 100, "bottom": 100}
-
-IMPORTANT: Return ONLY the JSON, no other text."""
+        print(f"Detected {len(panels)} panels")
         
-        model = genai.GenerativeModel('gemini-1.5-flash')
-        
-        # Set timeout if available
-        generation_config = {"temperature": 0.1}
-        
-        try:
-            response = model.generate_content(
-                [prompt, uploaded_file],
-                generation_config=generation_config
-            )
-        except Exception as e:
-            print(f"Generation failed: {e}")
-            return None
-        
-        # Clean up uploaded file
-        try:
-            uploaded_file.delete()
-        except:
-            pass
-        
-        # Parse response
-        response_text = response.text.strip()
-        
-        # Extract JSON - try multiple patterns
-        json_match = re.search(r'```json\s*(.+?)\s*```', response_text, re.DOTALL)
-        if json_match:
-            json_str = json_match.group(1)
-        else:
-            # Try finding raw JSON
-            json_match = re.search(r'\{[^}]+\}', response_text)
-            if json_match:
-                json_str = json_match.group(0)
-            else:
-                return None
-        
-        try:
-            coords = json.loads(json_str)
-            left = float(coords.get('left', 0))
-            top = float(coords.get('top', 0))
-            right = float(coords.get('right', 100))
-            bottom = float(coords.get('bottom', 100))
+        result = []
+        for i, (x, y, w, h) in enumerate(panels, start=1):
+            # Add small padding
+            pad = 8
+            x0 = max(0, x - pad)
+            y0 = max(0, y - pad)
+            x1 = min(img.shape[1], x + w + pad)
+            y1 = min(img.shape[0], y + h + pad)
             
-            # Validate coordinates
-            if not (0 <= left < right <= 100 and 0 <= top < bottom <= 100):
-                return None
+            # Crop panel
+            crop = img[y0:y1, x0:x1].copy()
             
-            return (left, top, right, bottom)
-            
-        except (json.JSONDecodeError, KeyError, ValueError, TypeError):
-            return None
+            # Encode back to bytes
+            success, encoded = cv2.imencode('.png', crop)
+            if success:
+                result.append((encoded.tobytes(), i))
+                print(f"Cropped scene {i}: position ({y0}, {y1}), size {w}x{h}")
+        
+        return result if result else [(image_data, 1)]
     
     except Exception as e:
-        print(f"Error in detect_text_free_region: {e}")
-        return None
+        print(f"Error splitting panels: {e}")
+        import traceback
+        traceback.print_exc()
+        return [(image_data, 1)]
 
-def crop_text_from_image(image_data: bytes, api_key: str) -> bytes:
+
+def process_image_to_bytes(image_data: bytes, remove_text: bool = False, api_key: str = None) -> bytes:
     """
-    Crop text/speech bubbles from a comic panel using AI detection.
+    Process image: resize to 1920x1080 with blurred background.
     
     Args:
         image_data: Raw image bytes
-        api_key: Gemini API key for vision analysis
-    
-    Returns:
-        Cropped image as bytes (JPEG)
-    """
-    # Open image
-    img = Image.open(io.BytesIO(image_data))
-    if img.mode != 'RGB':
-        img = img.convert('RGB')
-    
-    width, height = img.size
-    
-    # Detect text-free region with timeout
-    try:
-        region = detect_text_free_region(image_data, api_key, timeout=30)
-    except Exception as e:
-        print(f"Text detection failed: {e}")
-        region = None
-    
-    if region:
-        left_pct, top_pct, right_pct, bottom_pct = region
-        
-        # Convert percentages to pixels
-        left = int(width * left_pct / 100)
-        top = int(height * top_pct / 100)
-        right = int(width * right_pct / 100)
-        bottom = int(height * bottom_pct / 100)
-        
-        # Ensure valid crop area (at least 20% of original)
-        min_width = width * 0.2
-        min_height = height * 0.2
-        
-        if (right - left) >= min_width and (bottom - top) >= min_height:
-            # Crop is valid
-            img = img.crop((left, top, right, bottom))
-        else:
-            print(f"Crop area too small, using original image")
-    else:
-        print("No text region detected, using original image")
-    
-    # Return as bytes
-    output = io.BytesIO()
-    img.save(output, format='JPEG', quality=95)
-    output.seek(0)
-    return output.getvalue()
-
-def resize_with_blur_background(image_data: bytes, target_size: Tuple[int, int] = (1920, 1080)) -> Image.Image:
-    """
-    Resize an image to target size with a blurred background fill.
-    
-    The original image is centered on a blurred, scaled version of itself
-    that fills the entire target canvas.
-    
-    Args:
-        image_data: Raw image bytes
-        target_size: Target dimensions (width, height), default 1920x1080
-    
-    Returns:
-        PIL Image object with the composited result
-    """
-    # Open the image
-    img = Image.open(io.BytesIO(image_data))
-    
-    # Convert to RGB if necessary (handles PNG transparency, etc.)
-    if img.mode != 'RGB':
-        img = img.convert('RGB')
-    
-    target_width, target_height = target_size
-    orig_width, orig_height = img.size
-    
-    # Scale image to fill the entire target area (may crop)
-    bg_scale = max(target_width / orig_width, target_height / orig_height)
-    bg_size = (int(orig_width * bg_scale), int(orig_height * bg_scale))
-    background = img.resize(bg_size, Image.Resampling.LANCZOS)
-    
-    # Crop to target size (center crop)
-    left = (bg_size[0] - target_width) // 2
-    top = (bg_size[1] - target_height) // 2
-    background = background.crop((left, top, left + target_width, top + target_height))
-    
-    # Apply strong blur
-    background = background.filter(ImageFilter.GaussianBlur(radius=30))
-    
-    # Darken the background slightly for better contrast
-    enhancer = ImageEnhance.Brightness(background)
-    background = enhancer.enhance(0.5)
-    
-    # Scale foreground image to fit within target (preserve aspect ratio)
-    fg_scale = min(target_width / orig_width, target_height / orig_height)
-    # Leave some padding (90% of available space)
-    fg_scale *= 0.9
-    fg_size = (int(orig_width * fg_scale), int(orig_height * fg_scale))
-    foreground = img.resize(fg_size, Image.Resampling.LANCZOS)
-    
-    # Calculate position to center the foreground
-    x = (target_width - fg_size[0]) // 2
-    y = (target_height - fg_size[1]) // 2
-    
-    # Composite
-    background.paste(foreground, (x, y))
-    
-    return background
-
-def process_image_to_bytes(
-    image_data: bytes, 
-    format: str = "JPEG", 
-    remove_text: bool = False, 
-    api_key: Optional[str] = None
-) -> bytes:
-    """
-    Process an image and return as bytes.
-    
-    Args:
-        image_data: Raw image bytes
-        format: Output format (JPEG, PNG)
-        remove_text: If True, use AI to crop out text/speech bubbles first
-        api_key: Gemini API key (required if remove_text is True)
+        remove_text: (unused, kept for compatibility)
+        api_key: (unused, kept for compatibility)
     
     Returns:
         Processed image as bytes
-    
-    Raises:
-        ValueError: If remove_text is True but api_key is not provided
     """
-    # Validate inputs
-    if remove_text and not api_key:
-        raise ValueError("API key is required for text removal")
-    
-    # First, crop out text if requested
-    if remove_text and api_key:
-        try:
-            image_data = crop_text_from_image(image_data, api_key)
-        except Exception as e:
-            print(f"Text removal failed, using original image: {e}")
-            # Continue with original image
-    
-    # Then apply the blur background resize
     try:
-        processed = resize_with_blur_background(image_data)
+        img = Image.open(io.BytesIO(image_data))
+        
+        # Convert to RGB if necessary
+        if img.mode != 'RGB':
+            img = img.convert('RGB')
+        
+        target_width, target_height = 1920, 1080
+        img_width, img_height = img.size
+        
+        # Calculate aspect ratios
+        target_ratio = target_width / target_height
+        img_ratio = img_width / img_height
+        
+        # Create blurred background
+        background = img.copy()
+        background = background.resize((target_width, target_height), Image.LANCZOS)
+        background = background.filter(ImageFilter.GaussianBlur(radius=30))
+        
+        # Darken the background
+        enhancer = ImageEnhance.Brightness(background)
+        background = enhancer.enhance(0.6)
+        
+        # Resize main image to fit
+        if img_ratio > target_ratio:
+            new_width = target_width
+            new_height = int(target_width / img_ratio)
+        else:
+            new_height = target_height
+            new_width = int(target_height * img_ratio)
+        
+        img = img.resize((new_width, new_height), Image.LANCZOS)
+        
+        # Center the image
+        x = (target_width - new_width) // 2
+        y = (target_height - new_height) // 2
+        
+        background.paste(img, (x, y))
+        
+        # Convert to bytes
         output = io.BytesIO()
-        processed.save(output, format=format, quality=95)
-        output.seek(0)
+        background.save(output, format='JPEG', quality=95)
+        
         return output.getvalue()
+    
     except Exception as e:
-        raise ValueError(f"Image processing failed: {str(e)}")
+        print(f"Error processing image: {e}")
+        return image_data
