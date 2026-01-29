@@ -103,7 +103,7 @@ with col1:
     with sub_col2:
         if st.button("➖ Remove") and st.session_state.panel_count > 1:
             st.session_state.panel_count -= 1
-                            st.rerun()
+                st.rerun()
     remove_text = st.checkbox("Remove text/speech bubbles", value=True, help="Use AI to detect and crop out dialogue text from panels")
     st.markdown("---")
     
