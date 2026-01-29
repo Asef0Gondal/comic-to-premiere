@@ -133,7 +133,7 @@ Rules:
 """
         
         # Use Gemini 1.5 Flash with timeout handling
-        model = genai.GenerativeModel('models/gemini-1.5-flash-latest')
+        model = genai.GenerativeModel('models/gemini-1.5-flash')
         
         try:
             response = model.generate_content(
