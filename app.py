@@ -100,11 +100,8 @@ with col1:
             st.rerun()
     with sub_col2:
         if st.button("➖ Remove") and st.session_state.panel_count > 1:
-            st.session_state.panel_count -= 1
-            st.rerun()
-    with sub_col3:
-        st.write(f"Total panels: {st.session_state.panel_count}")
-    
+if 'audio_count' not in st.session_state:
+        st.session_state.audio_count = 1    
     # Text removal option
     remove_text = st.checkbox("Remove text/speech bubbles", value=True, help="Use AI to detect and crop out dialogue text from panels")
     
@@ -119,16 +116,33 @@ with col1:
 with col2:
     st.markdown('<h3 class="step-header">🎤 Audio & Script</h3>', unsafe_allow_html=True)
     
-    # Audio uploader
-    audio_file = st.file_uploader("Voice-Over Audio", type=['mp3', 'wav', 'ogg', 'm4a'], help="Upload the full voice-over audio file")
+    # Audio count controls
+    audio_sub_col1, audio_sub_col2, audio_sub_col3 = st.columns([1, 1, 2])
     
-    # Audio preview
-    if audio_file:
-        st.audio(audio_file, format=f"audio/{audio_file.name.split('.')[-1]}")
+    with audio_sub_col1:
+        if st.button("➕ Add Audio"):
+            st.session_state.audio_count += 1
+            st.rerun()
+    
+    with audio_sub_col2:
+        if st.button("➖ Remove Audio") and st.session_state.audio_count > 1:
+            st.session_state.audio_count -= 1
+            st.rerun()
+    
+    with audio_sub_col3:
+        st.write(f"Total audio files: {st.session_state.audio_count}")
     
     st.markdown("---")
     
-    # Script text area
+    # Audio uploaders
+    uploaded_audios = []
+    for i in range(st.session_state.audio_count):
+        audio_file = st.file_uploader(f"Voice-Over Audio {i+1}", type=['mp3', 'wav', 'ogg', 'm4a'], help="Upload the full voice-over audio file", key=f"audio{i}")
+        uploaded_audios.append(audio_file    if uploaded_audios and uploaded_audios[0]:
+        st.audio(uploaded_audios[0], format=f"audio/{uploaded_audios[0].name.split('.')[-1]}")
+    
+    st.markdown("---")    
+    
     script = st.text_area("Script / Dialogue", height=200, 
         placeholder="Enter your script here. You can mark panel boundaries like:\n\nPanel 1: Hello, this is the first panel's dialogue...\n\nPanel 2: And this continues in the second panel...\n\nOr just paste the full dialogue and the AI will divide it evenly.",
         help="The AI will use this to determine timing for each panel")
@@ -138,16 +152,14 @@ st.markdown('<h3 class="step-header">⚡ Generate</h3>', unsafe_allow_html=True)
 
 # Process button
 panels_uploaded = sum(1 for p in uploaded_panels if p is not None)
-ready_to_process = api_key and panels_uploaded > 0 and audio_file is not None and script.strip()
-
+ready_to_process = api_key and panels_uploaded > 0 and any(uploaded_audios) and script.strip()
 if not ready_to_process:
     missing = []
     if not api_key:
         missing.append("API Key in sidebar")
     if panels_uploaded == 0:
         missing.append("At least one panel image")
-    if not audio_file:
-        missing.append("Audio file")
+        if not any(uploaded_audios):
     if not script.strip():
         missing.append("Script text")
     st.warning(f"⚠️ Missing: {', '.join(missing)}")
@@ -177,18 +189,11 @@ if st.button("🚀 Process & Generate XML", type="primary", disabled=not ready_t
             
             # Step 2: Analyze audio with Gemini
             status_text.text("Step 2/4: Analyzing audio with AI...")
-            audio_data = audio_file.read()
-            audio_filename = audio_file.name
-            audio_file.seek(0)
-            
-            timings = analyze_audio_timing(
-                api_key=api_key,
-                audio_data=audio_data,
-                audio_filename=audio_filename,
-                script=script,
-                panel_count=len(image_filenames)
-            )
-            progress_bar.progress(60)
+                audio_data = uploaded_audios[0].read()                audio_filename = uploaded_audios[0].name            
+                audio_filename = uploaded_audios[0].name                audio_data=audio_data,
+                
+                # Get the first audio file for processing                
+                timings = analyze_audio_timing(            progress_bar.progress(60)
             
             # Fallback if AI analysis failed
             if timings is None:
