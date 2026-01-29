@@ -1,7 +1,7 @@
-\"\"\"Comic-to-Premiere Web Application
+"""\"\"\"Comic-to-Premiere Web Application
 A Streamlit app that syncs comic panels with voice-over using Google Gemini AI.
 Production-ready version with error handling, validation, and enhanced features.
-\"\"\"
+\"""
 import streamlit as st
 import zipfile
 import io
