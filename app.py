@@ -318,7 +318,7 @@ with col2:
     )
     
     audio_error = None
-   if audio_file:
+       if audio_file:
         is_valid_size, size_error = validate_file_size(audio_file, MAX_FILE_SIZE_MB, "Audio file")
         if not is_valid_size:
             st.error(size_error)
