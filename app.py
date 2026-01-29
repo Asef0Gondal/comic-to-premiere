@@ -88,8 +88,8 @@ col1, col2 = st.columns([1, 1])
 # Initialize session state for panels
 if 'panel_count' not in st.session_state:
     st.session_state.panel_count = 3
-    if 'audio_count' not in st.session_state:
-        st.session_state.audio_count = 1
+if 'audio_count' not in st.session_state:
+    st.session_state.audio_count = 1
 
 with col1:
     st.markdown('<h3 class="step-header">📸 Panel Setup</h3>', unsafe_allow_html=True)
@@ -103,7 +103,7 @@ with col1:
     with sub_col2:
         if st.button("➖ Remove") and st.session_state.panel_count > 1:
             st.session_state.panel_count -= 1
-                st.rerun()
+            st.rerun()
     remove_text = st.checkbox("Remove text/speech bubbles", value=True, help="Use AI to detect and crop out dialogue text from panels")
     st.markdown("---")
     
@@ -138,13 +138,15 @@ with col2:
     uploaded_audios = []
     for i in range(st.session_state.audio_count):
         audio_file = st.file_uploader(f"Voice-Over Audio {i+1}", type=['mp3', 'wav', 'ogg', 'm4a'], help="Upload the full voice-over audio file", key=f"audio{i}")
-        uploaded_audios.append(audio_file    if uploaded_audios and uploaded_audios[0]:
+        uploaded_audios.append(audio_file)
+    
+    if uploaded_audios and uploaded_audios[0]:
         st.audio(uploaded_audios[0], format=f"audio/{uploaded_audios[0].name.split('.')[-1]}")
     
     st.markdown("---")    
     
     script = st.text_area("Script / Dialogue", height=200, 
-        placeholder="Enter your script here. You can mark panel boundaries like:\n\nPanel 1: Hello, this is the first panel's dialogue...\n\nPanel 2: And this continues in the second panel...\n\nOr just paste the full dialogue and the AI will divide it evenly.",
+        placeholder="Enter your script here. You can mark panel boundaries like:\\n\\nPanel 1: Hello, this is the first panel's dialogue...\\n\\nPanel 2: And this continues in the second panel...\\n\\nOr just paste the full dialogue and the AI will divide it evenly.",
         help="The AI will use this to determine timing for each panel")
 
 st.markdown("---")
@@ -159,7 +161,8 @@ if not ready_to_process:
         missing.append("API Key in sidebar")
     if panels_uploaded == 0:
         missing.append("At least one panel image")
-        if not any(uploaded_audios):
+    if not any(uploaded_audios):
+        missing.append("At least one audio file")
     if not script.strip():
         missing.append("Script text")
     st.warning(f"⚠️ Missing: {', '.join(missing)}")
@@ -189,11 +192,19 @@ if st.button("🚀 Process & Generate XML", type="primary", disabled=not ready_t
             
             # Step 2: Analyze audio with Gemini
             status_text.text("Step 2/4: Analyzing audio with AI...")
-                audio_data = uploaded_audios[0].read()                audio_filename = uploaded_audios[0].name            
-                audio_filename = uploaded_audios[0].name                audio_data=audio_data,
-                
-                # Get the first audio file for processing                
-                timings = analyze_audio_timing(            progress_bar.progress(60)
+            
+            # Get the first audio file for processing
+            audio_data = uploaded_audios[0].read()
+            audio_filename = uploaded_audios[0].name
+            
+            timings = analyze_audio_timing(
+                api_key=api_key,
+                audio_data=audio_data,
+                audio_filename=audio_filename,
+                script=script,
+                panel_count=len(image_filenames)
+            )
+            progress_bar.progress(60)
             
             # Fallback if AI analysis failed
             if timings is None:
@@ -229,8 +240,8 @@ if st.button("🚀 Process & Generate XML", type="primary", disabled=not ready_t
                     zf.writestr(filename, img_data)
                 
                 # Add original audio
-                audio_file.seek(0)
-                zf.writestr(audio_filename, audio_file.read())
+                uploaded_audios[0].seek(0)
+                zf.writestr(audio_filename, uploaded_audios[0].read())
             
             zip_buffer.seek(0)
             progress_bar.progress(100)
