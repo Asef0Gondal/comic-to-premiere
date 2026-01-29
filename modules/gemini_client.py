@@ -116,3 +116,26 @@ def analyze_audio_with_gemini(
 ) -> Optional[list]:
     """Wrapper function for compatibility."""
     return analyze_audio_timing(api_key, audio_data, audio_filename, script, panel_count)
+
+def generate_fallback_timings(panel_count: int, total_duration: float = 10.0) -> list:
+    """
+    Generate evenly-spaced fallback timings when audio analysis fails.
+    
+    Args:
+        panel_count: Number of panels
+        total_duration: Total duration in seconds (default: 10.0)
+    
+    Returns:
+        List of timing dicts with even distribution
+    """
+    duration_per_panel = total_duration / panel_count
+    timings = []
+    
+    for i in range(panel_count):
+        timings.append({
+            "panel": i + 1,
+            "start_time": i * duration_per_panel,
+            "duration": duration_per_panel
+        })
+    
+    return timings
