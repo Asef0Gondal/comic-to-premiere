@@ -1,4 +1,4 @@
-"""Comic-to-Premiere Web Application
+237"""Comic-to-Premiere Web Application
 A Streamlit app that syncs comic panels with voice-over using Google Gemini AI.
 
 Production-ready version with error handling, validation, and enhanced features.
@@ -234,56 +234,75 @@ col1, col2 = st.columns([1, 1])
 with col1:
     st.markdown('<h3 class="step-header">📸 Panel Setup</h3>', unsafe_allow_html=True)
     
-    # Panel count controls
-    sub_col1, sub_col2, sub_col3 = st.columns([1, 1, 2])
-    with sub_col1:
-        if st.button("➕ Add Panel"):
-            if st.session_state.panel_count < MAX_PANELS:
-                st.session_state.panel_count += 1
+    # Multi-file panel uploader
+    st.markdown("##### Upload Comic Panels")
+    
+    # Initialize session state for uploaded panels
+    if 'uploaded_panels_list' not in st.session_state:
+        st.session_state.uploaded_panels_list = []
+    if 'panels_order_reversed' not in st.session_state:
+        st.session_state.panels_order_reversed = False
+    
+    # Multi-file uploader
+    uploaded_files = st.file_uploader(
+        "Select all panel images (they will be ordered as you select them)",
+        type=SUPPORTED_IMAGE_FORMATS,
+        accept_multiple_files=True,
+        help=f"Upload all panels at once (max {MAX_IMAGE_SIZE_MB}MB per image, up to {MAX_PANELS} panels total)",
+        key="panels_uploader"
+    )
+    
+    # Update session state when files are uploaded
+    if uploaded_files:
+        st.session_state.uploaded_panels_list = uploaded_files
+        st.session_state.panel_count = len(uploaded_files)
+    
+    # Show panel count and order controls
+    if st.session_state.uploaded_panels_list:
+        col_info, col_reverse = st.columns([3, 1])
+        
+        with col_info:
+            st.info(f"📊 {len(st.session_state.uploaded_panels_list)} panel(s) uploaded")
+        
+        with col_reverse:
+            if st.button("🔄 Reverse Order"):
+                st.session_state.uploaded_panels_list = list(reversed(st.session_state.uploaded_panels_list))
+                st.session_state.panels_order_reversed = not st.session_state.panels_order_reversed
                 st.rerun()
-            else:
-                st.warning(f"Maximum {MAX_PANELS} panels allowed")
-    
-    with sub_col2:
-        if st.button("➖ Remove") and st.session_state.panel_count > MIN_PANELS:
-            st.session_state.panel_count -= 1
-            st.rerun()
-    
-    with sub_col3:
-        st.write(f"Total panels: {st.session_state.panel_count}")
+        
+        # Display panel order preview
+        with st.expander("📋 View Panel Order", expanded=False):
+            for i, panel in enumerate(st.session_state.uploaded_panels_list):
+                st.text(f"{i+1}. {panel.name}")
     
     st.markdown("---")
     
-    # Panel uploaders with validation
+    # Validate uploaded panels
     uploaded_panels = []
     panel_errors = []
     
-    for i in range(st.session_state.panel_count):
-        uploaded_file = st.file_uploader(
-            f"Panel {i+1}", 
-            type=SUPPORTED_IMAGE_FORMATS, 
-            key=f"panel{i}",
-            help=f"Upload image (max {MAX_IMAGE_SIZE_MB}MB)"
-        )
-        
-        # Validate if file uploaded
-        if uploaded_file:
+    if st.session_state.uploaded_panels_list:
+        for i, uploaded_file in enumerate(st.session_state.uploaded_panels_list):
+            # Validate file size
             is_valid_size, size_error = validate_file_size(uploaded_file, MAX_IMAGE_SIZE_MB, f"Panel {i+1}")
             if not is_valid_size:
-                st.error(size_error)
+                st.error(f"Panel {i+1} ({uploaded_file.name}): {size_error}")
                 panel_errors.append(size_error)
                 uploaded_file = None
             else:
                 # Validate image integrity
                 is_valid_img, img_error = validate_image(uploaded_file)
                 if not is_valid_img:
-                    st.error(f"Panel {i+1}: {img_error}")
+                    st.error(f"Panel {i+1} ({uploaded_file.name}): {img_error}")
                     panel_errors.append(img_error)
                     uploaded_file = None
-                else:
-                    st.success(f"✅ {format_file_size(uploaded_file.size)}")
+            
+            uploaded_panels.append(uploaded_file)
         
-        uploaded_panels.append(uploaded_file)
+        # Check if we exceeded max panels
+        if len(st.session_state.uploaded_panels_list) > MAX_PANELS:
+            st.error(f"⚠️ Maximum {MAX_PANELS} panels allowed. You uploaded {len(st.session_state.uploaded_panels_list)}.")
+            panel_errors.append(f"Too many panels: {len(st.session_state.uploaded_panels_list)}")
 
 with col2:
     st.markdown('<h3 class="step-header">🎤 Audio & Script</h3>', unsafe_allow_html=True)
@@ -299,7 +318,7 @@ with col2:
     )
     
     audio_error = None
-    if audio_file:
+   if audio_file:
         is_valid_size, size_error = validate_file_size(audio_file, MAX_FILE_SIZE_MB, "Audio file")
         if not is_valid_size:
             st.error(size_error)
