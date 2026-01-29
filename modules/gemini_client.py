@@ -1,6 +1,7 @@
 """Google Gemini API Client Module
-Handles audio timing analysis using Gemini 1.5 Flash.
+Handles audio timing analysis and script parsing using Gemini 1.5 Flash.
 """
+
 import google.generativeai as genai
 import json
 import re
@@ -27,126 +28,91 @@ def analyze_audio_timing(
         panel_count: Number of panels to sync
     
     Returns:
-        List of dicts with panel timing:
-        [{"panel": 1, "start": 0.0, "end": 3.5}, ...]
-        Returns None if analysis fails
+        List of dicts with panel timings:
+        [{"panel": 1, "start_time": 0.0, "duration": 2.5},
+         {"panel": 2, "start_time": 2.5, "duration": 3.0}]
     """
-    # Configure the API
+    # Configure Gemini
     genai.configure(api_key=api_key)
     
-    # Determine mime type based on file extension
-    ext = audio_filename.lower().split('.')[-1]
-    mime_types = {
-        'mp3': 'audio/mpeg',
-        'wav': 'audio/wav',
-        'ogg': 'audio/ogg',
-        'm4a': 'audio/mp4',
-    }
-    mime_type = mime_types.get(ext, 'audio/mpeg')
+    # Save audio data to temp file
+    import tempfile
+    import os
     
-    # Create the prompt
-    prompt = f"""I am providing an audio file and a script. The script has {panel_count} panels.
+    mime_type = "audio/mpeg"  # default
+    if audio_filename.lower().endswith(".wav"):
+        mime_type = "audio/wav"
+    elif audio_filename.lower().endswith(".m4a"):
+        mime_type = "audio/mp4"
+    elif audio_filename.lower().endswith(".ogg"):
+        mime_type = "audio/ogg"
+    
+    # Create temp file
+    suffix = os.path.splitext(audio_filename)[1]
+    with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as temp_audio:
+        temp_audio.write(audio_data)
+        temp_audio_path = temp_audio.name
+    
+    try:
+        # Upload audio file
+        audio_file = genai.upload_file(temp_audio_path)
+        
+        # Create detailed prompt
+        prompt = f"""You are an expert audio timing analyst for comic-to-video conversion.
 
-Please analyze the audio and provide the exact Start Time and End Time in seconds for each panel's dialogue.
+I have {panel_count} comic panels and this audio narration. The script for the narration is:
 
-SCRIPT:
 {script}
 
-IMPORTANT INSTRUCTIONS:
-1. Listen to the audio carefully and identify when each panel's dialogue starts and ends.
-2. If the script doesn't clearly mark panel boundaries, divide the dialogue evenly based on the content.
-3. Ensure there are exactly {panel_count} panel entries in your response.
-4. Times should be in seconds with up to 2 decimal places.
-5. Panels should be sequential - each panel starts where the previous one ends.
+Please analyze the audio and determine:
+1. When each panel's dialogue/narration starts (start_time in seconds)
+2. How long each panel should be displayed (duration in seconds)
 
-Return the data as a pure JSON list in EXACTLY this format (no other text, just the JSON):
+Return ONLY a JSON array with this exact format:
 [
-  {{"panel": 1, "start": 0.0, "end": 3.5}},
-  {{"panel": 2, "start": 3.5, "end": 7.2}},
-  ...
-]"""
+  {{"panel": 1, "start_time": 0.0, "duration": 2.5}},
+  {{"panel": 2, "start_time": 2.5, "duration": 3.0}}
+]
 
-    # Upload the audio file
-    audio_file = genai.upload_file(
-        data=audio_data,
-        display_name=audio_filename,
-        mime_type=mime_type
-    )
-    
-    # Use Gemini 1.5 Flash
-    model = genai.GenerativeModel('gemini-1.5-flash')
-    
-    # Generate response
-    response = model.generate_content([prompt, audio_file])
-    
-    # Clean up the uploaded file
-    try:
-        audio_file.delete()
-    except:
-        pass
-    
-    # Parse the response
-    response_text = response.text.strip()
-    
-    # Handle cases where the model wraps JSON in markdown code blocks
-    json_match = re.search(r'```json\s*(.+?)\s*```', response_text, re.DOTALL)
-    if json_match:
-        json_str = json_match.group(1)
-        try:
-            timings = json.loads(json_str)
-            return timings
-        except json.JSONDecodeError:
-            pass
-    
-    # If extraction failed, try parsing the whole response
-    try:
-        timings = json.loads(response_text)
-        return timings
-    except json.JSONDecodeError:
+Rules:
+- Must have exactly {panel_count} entries
+- Times must be accurate to the audio
+- Each panel's start_time should equal previous panel's (start_time + duration)
+- Return ONLY the JSON array, no other text
+"""
+        
+        # Use Gemini 1.5 Flash
+        model = genai.GenerativeModel('gemini-1.5-flash')
+        response = model.generate_content([prompt, audio_file])
+        
+        # Extract JSON from response
+        response_text = response.text.strip()
+        
+        # Try to find JSON array in response
+        json_match = re.search(r'\[.*?\]', response_text, re.DOTALL)
+        if json_match:
+            json_str = json_match.group(0)
+            timing_data = json.loads(json_str)
+            
+            # Validate
+            if len(timing_data) == panel_count:
+                return timing_data
+        
         return None
+        
+    finally:
+        # Clean up temp file
+        try:
+            os.unlink(temp_audio_path)
+        except:
+            pass
 
-def generate_fallback_timings(panel_count: int, total_duration: float) -> list:
-    """
-    Generate evenly distributed fallback timings when AI analysis fails.
-    
-    Args:
-        panel_count: Number of panels
-        total_duration: Total audio duration in seconds
-    
-    Returns:
-        List of timing dicts
-    """
-    duration_per_panel = total_duration / panel_count
-    timings = []
-    for i in range(panel_count):
-        timings.append({
-            "panel": i + 1,
-            "start": round(i * duration_per_panel, 2),
-            "end": round((i + 1) * duration_per_panel, 2)
-        })
-    return timings
-
-def analyze_audio_with_gemini(audio_bytes, audio_filename, panel_count, api_key):
-    """
-    Wrapper function for compatibility with app.py.
-    Analyzes audio and returns timing data for comic panels.
-    
-    Args:
-        audio_bytes: Raw audio file bytes
-        audio_filename: Original filename
-        panel_count: Number of panels
-        api_key: Google Gemini API key
-    
-    Returns:
-        List of timing dictionaries or None if analysis fails
-    """
-    # Create a simple generic script for panel analysis
-    script = f"Comic panels 1-{panel_count} with dialogue"
-    
-    return analyze_audio_timing(
-        api_key=api_key,
-        audio_data=audio_bytes,
-        audio_filename=audio_filename,
-        script=script,
-        panel_count=panel_count
-    )
+def analyze_audio_with_gemini(
+    api_key: str,
+    audio_data: bytes,
+    audio_filename: str,
+    script: str,
+    panel_count: int
+) -> Optional[list]:
+    """Wrapper function for compatibility."""
+    return analyze_audio_timing(api_key, audio_data, audio_filename, script, panel_count)
