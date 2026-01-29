@@ -89,7 +89,7 @@ col1, col2 = st.columns([1, 1])
 if 'panel_count' not in st.session_state:
     st.session_state.panel_count = 3
     if 'audio_count' not in st.session_state:
-    st.session_state.audio_count = 1
+        st.session_state.audio_count = 1
 
 with col1:
     st.markdown('<h3 class="step-header">📸 Panel Setup</h3>', unsafe_allow_html=True)
