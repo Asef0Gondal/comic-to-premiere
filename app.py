@@ -88,6 +88,8 @@ col1, col2 = st.columns([1, 1])
 # Initialize session state for panels
 if 'panel_count' not in st.session_state:
     st.session_state.panel_count = 3
+    if 'audio_count' not in st.session_state:
+    st.session_state.audio_count = 1
 
 with col1:
     st.markdown('<h3 class="step-header">📸 Panel Setup</h3>', unsafe_allow_html=True)
@@ -100,11 +102,8 @@ with col1:
             st.rerun()
     with sub_col2:
         if st.button("➖ Remove") and st.session_state.panel_count > 1:
-if 'audio_count' not in st.session_state:
         st.session_state.audio_count = 1    
-    # Text removal option
     remove_text = st.checkbox("Remove text/speech bubbles", value=True, help="Use AI to detect and crop out dialogue text from panels")
-    
     st.markdown("---")
     
     # Panel uploaders
