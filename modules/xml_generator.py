@@ -59,3 +59,6 @@ def generate_premiere_xml(timings, image_path, audio_path, output_path="comic_ti
         f.write(xml_str)
     
     return output_path
+
+# Alias for backwards compatibility
+create_premiere_xml = generate_premiere_xml
