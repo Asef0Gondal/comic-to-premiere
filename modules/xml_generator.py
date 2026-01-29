@@ -28,31 +28,34 @@ def generate_premiere_xml(timings, image_path, audio_path, output_path="comic_ti
     # Add clips for each panel
     for timing in timings:
         clipitem = ET.SubElement(track, 'clipitem')
-        ET.SubElement(clipitem, 'name').text = f"Panel_{timing['panel']}"
-        ET.SubElement(clipitem, 'start').text = str(timing['start'])
-        ET.SubElement(clipitem, 'end').text = str(timing['end'])
+        ET.SubElement(clipitem, 'name').text = f"Panel {timing['panel']}"
+        ET.SubElement(clipitem, 'start').text = str(timing['start_time'])
+        ET.SubElement(clipitem, 'end').text = str(timing['start_time'] + timing['duration'])
         ET.SubElement(clipitem, 'in').text = '0'
         ET.SubElement(clipitem, 'out').text = str(timing['duration'])
         
         # Add file reference
         file_elem = ET.SubElement(clipitem, 'file')
-        ET.SubElement(file_elem, 'pathurl').text = image_path
+        ET.SubElement(file_elem, 'name').text = image_path
+        ET.SubElement(file_elem, 'pathurl').text = f'file://localhost/{image_path}'
     
-    # Create audio track
+    # Add audio track
     audio = ET.SubElement(media, 'audio')
     audio_track = ET.SubElement(audio, 'track')
+    audio_clip = ET.SubElement(audio_track, 'clipitem')
+    ET.SubElement(audio_clip, 'name').text = 'Audio'
+    ET.SubElement(audio_clip, 'start').text = '0'
+    ET.SubElement(audio_clip, 'end').text = str(sum(t['duration'] for t in timings))
     
-    # Add audio clip
-    audio_clipitem = ET.SubElement(audio_track, 'clipitem')
-    ET.SubElement(audio_clipitem, 'name').text = 'Audio'
-    audio_file = ET.SubElement(audio_clipitem, 'file')
-    ET.SubElement(audio_file, 'pathurl').text = audio_path
+    audio_file = ET.SubElement(audio_clip, 'file')
+    ET.SubElement(audio_file, 'name').text = audio_path
+    ET.SubElement(audio_file, 'pathurl').text = f'file://localhost/{audio_path}'
     
     # Pretty print XML
-    xml_string = minidom.parseString(ET.tostring(xmeml)).toprettyxml(indent="  ")
+    xml_str = minidom.parseString(ET.tostring(xmeml)).toprettyxml(indent="  ")
     
     # Write to file
     with open(output_path, 'w') as f:
-        f.write(xml_string)
+        f.write(xml_str)
     
     return output_path
