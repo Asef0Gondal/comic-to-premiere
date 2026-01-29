@@ -18,7 +18,7 @@ def create_premiere_xml(image_filenames: List[str], timings: List[Dict[str, Any]
     
     # Constants for Premiere Pro XML
     FPS = 30
-    TIMEBASE = \"30\"
+    TIMEBASE = "30"
     WIDTH = 1920
     HEIGHT = 1080
     
@@ -118,7 +118,7 @@ def create_premiere_xml(image_filenames: List[str], timings: List[Dict[str, Any]
     # Convert to string and format
     xml_str = ET.tostring(xmeml, encoding='utf-8')
     parsed_xml = minidom.parseString(xml_str)
-    return parsed_xml.toprettyxml(indent=\"  \")
+    return parsed_xml.toprettyxml(indent="  ")
 
 # Legacy support alias
 def generate_premiere_xml(timings, image_path, audio_path, output_path=None):
