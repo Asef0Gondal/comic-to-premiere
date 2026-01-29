@@ -218,7 +218,7 @@ if st.button("🚀 Process & Generate XML", type="primary", disabled=not ready_t
             status_text.text("Step 3/4: Generating Premiere Pro XML...")
             
             # Calculate total audio duration from timings
-            audio_duration = max([t.get('end', 0) for t in timings], default=30.0) if timings else 30.0
+            audio_duration = max([t.get('start_time', 0) + t.get('duration', 0) for t in timings], default=30.0) if timings else 30.0
             
             xml_content = create_premiere_xml(
                 image_filenames=image_filenames,
