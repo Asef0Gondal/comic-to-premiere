@@ -3,7 +3,7 @@ from xml.dom import minidom
 from typing import List, Dict, Any
 
 def create_premiere_xml(image_filenames: List[str], timings: List[Dict[str, Any]], audio_filename: str, audio_duration: float) -> str:
-    \"\"\"
+    """
     Generate Adobe Premiere Pro compatible XML (FCP 7 XML format) from timing data.
     
     Args:
@@ -14,7 +14,7 @@ def create_premiere_xml(image_filenames: List[str], timings: List[Dict[str, Any]
         
     Returns:
         XML string in FCP 7 format
-    \"\"\"
+    """
     
     # Constants for Premiere Pro XML
     FPS = 30
